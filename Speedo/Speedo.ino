@@ -33,10 +33,8 @@ static const int GPSBaud = 9600;
 // The TinyGPS++ object
 TinyGPSPlus gps;
 
-// The serial connection to the GPS device
+// The serial connection to the GPS device (Soft serial port)
 SoftwareSerial ss(GPS_RXPin, GPS_TXPin);
-
-
 
 void setup()
 {
@@ -81,46 +79,99 @@ void setup()
 
 void loop()
 {
+  //LEDs
   int byCount = 0; // byCount holds the LED to turn on (1-16)
   float LED_ind = 0;
   
+  //Accel
   int AccelX_MAX = -500;
   int AccelX_MIN = 500;
   int AccelX_Range = 0;
   
+  //GPS
+  
+  
   while(1)
   {
-    BMA250ReadAccel();
+    //Accel
+      BMA250ReadAccel();
+      
+      // Print out the accelerometer data
+      Serial.print("x: ");
+      Serial.print(AccelX);
+      Serial.print(", y: ");
+      Serial.print(AccelY);
+      Serial.print(", z:");
+      Serial.print(AccelZ);
+      Serial.print(",  t: ");   
+      Serial.print(AccelTemperature);
+      Serial.print("degC");
+      
+      if ( AccelX_MAX < AccelX )
+      {
+        AccelX_MAX = AccelX;
+      }
+      if (AccelX_MIN > AccelX )
+      {
+        AccelX_MIN = AccelX;
+      }
+      AccelX_Range = AccelX_MAX - AccelX_MIN;
+      
+      Serial.print(",  led: ");
+      LED_ind = 16 * (AccelX + (AccelX_Range/2)) / AccelX_Range;
+      byCount = LED_ind;
+      Serial.println(byCount);
     
-    // Print out the accelerometer data
-    Serial.print("x: ");
-    Serial.print(AccelX);
-    Serial.print(", y: ");
-    Serial.print(AccelY);
-    Serial.print(", z:");
-    Serial.print(AccelZ);
-    Serial.print(",  t: ");   
-    Serial.print(AccelTemperature);
-    Serial.print("degC");
+    //LED
+      LedOn( byCount );
     
-    if ( AccelX_MAX < AccelX )
-    {
-      AccelX_MAX = AccelX;
-    }
-    if (AccelX_MIN > AccelX )
-    {
-      AccelX_MIN = AccelX;
-    }
-    AccelX_Range = AccelX_MAX - AccelX_MIN;
+    //GPS
+      static const double LONDON_LAT = 51.508131, LONDON_LON = -0.128002;
     
-    Serial.print(",  led: ");
-    LED_ind = 16 * (AccelX + (AccelX_Range/2)) / AccelX_Range;
-    byCount = LED_ind;
-    Serial.println(byCount);
+      printInt(gps.satellites.value(), gps.satellites.isValid(), 5);
+      printInt(gps.hdop.value(), gps.hdop.isValid(), 5);
+      printFloat(gps.location.lat(), gps.location.isValid(), 11, 6);
+      printFloat(gps.location.lng(), gps.location.isValid(), 12, 6);
+      printInt(gps.location.age(), gps.location.isValid(), 5);
+      printDateTime(gps.date, gps.time);
+      printFloat(gps.altitude.meters(), gps.altitude.isValid(), 7, 2);
+      printFloat(gps.course.deg(), gps.course.isValid(), 7, 2);
+      printFloat(gps.speed.kmph(), gps.speed.isValid(), 6, 2);
+      printStr(gps.course.isValid() ? TinyGPSPlus::cardinal(gps.course.value()) : "*** ", 6);
     
-    LedOn( byCount );   
+      unsigned long distanceKmToLondon =
+        (unsigned long)TinyGPSPlus::distanceBetween(
+          gps.location.lat(),
+          gps.location.lng(),
+          LONDON_LAT, 
+          LONDON_LON) / 1000;
+      printInt(distanceKmToLondon, gps.location.isValid(), 9);
     
-    delay(100);
+      double courseToLondon =
+        TinyGPSPlus::courseTo(
+          gps.location.lat(),
+          gps.location.lng(),
+          LONDON_LAT, 
+          LONDON_LON);
+    
+      printFloat(courseToLondon, gps.location.isValid(), 7, 2);
+    
+      const char *cardinalToLondon = TinyGPSPlus::cardinal(courseToLondon);
+    
+      printStr(gps.location.isValid() ? cardinalToLondon : "*** ", 6);
+    
+      printInt(gps.charsProcessed(), true, 6);
+      printInt(gps.sentencesWithFix(), true, 10);
+      printInt(gps.failedChecksum(), true, 9);
+      Serial.println();
+      
+      smartDelay(200);
+    
+      if (millis() > 5000 && gps.charsProcessed() < 10)
+        Serial.println(F("No GPS data received: check wiring"));
+      //END GPS 
+    
+    delay(10);
   }
 }
 
@@ -350,4 +401,86 @@ int BMA250ReadAccel()
   AccelZ >>= 6;  
 
   AccelTemperature = (ReadBuff[6] * 0.5) + 24.0;
+}
+
+// This custom version of delay() ensures that the gps object
+// is being "fed".
+static void smartDelay(unsigned long ms)
+{
+  unsigned long start = millis();
+  do 
+  {
+    while (ss.available())
+      gps.encode(ss.read());
+  } while (millis() - start < ms);
+}
+
+static void printFloat(float val, bool valid, int len, int prec)
+{
+  if (!valid)
+  {
+    while (len-- > 1)
+      Serial.print('*');
+    Serial.print(' ');
+  }
+  else
+  {
+    Serial.print(val, prec);
+    int vi = abs((int)val);
+    int flen = prec + (val < 0.0 ? 2 : 1); // . and -
+    flen += vi >= 1000 ? 4 : vi >= 100 ? 3 : vi >= 10 ? 2 : 1;
+    for (int i=flen; i<len; ++i)
+      Serial.print(' ');
+  }
+  smartDelay(0);
+}
+
+static void printInt(unsigned long val, bool valid, int len)
+{
+  char sz[32] = "*****************";
+  if (valid)
+    sprintf(sz, "%ld", val);
+  sz[len] = 0;
+  for (int i=strlen(sz); i<len; ++i)
+    sz[i] = ' ';
+  if (len > 0) 
+    sz[len-1] = ' ';
+  Serial.print(sz);
+  smartDelay(0);
+}
+
+static void printDateTime(TinyGPSDate &d, TinyGPSTime &t)
+{
+  if (!d.isValid())
+  {
+    Serial.print(F("********** "));
+  }
+  else
+  {
+    char sz[32];
+    sprintf(sz, "%02d/%02d/%02d ", d.month(), d.day(), d.year());
+    Serial.print(sz);
+  }
+  
+  if (!t.isValid())
+  {
+    Serial.print(F("******** "));
+  }
+  else
+  {
+    char sz[32];
+    sprintf(sz, "%02d:%02d:%02d ", t.hour(), t.minute(), t.second());
+    Serial.print(sz);
+  }
+
+  printInt(d.age(), d.isValid(), 5);
+  smartDelay(0);
+}
+
+static void printStr(const char *str, int len)
+{
+  int slen = strlen(str);
+  for (int i=0; i<len; ++i)
+    Serial.print(i<slen ? str[i] : ' ');
+  smartDelay(0);
 }
