@@ -66,11 +66,13 @@ void setup()
   } 
   
   ss.begin(GPSBaud);
+  // To enable a 5Hz update, send '$PSRF103,00,6,00,0*23' to the GPS
+  // http://www.telit.com/telit/Pulsar/en_US.Store.display.1067./jupiter-jf2
+  // http://telit.com/module/infopool/download.php?id=4204
+  ss.print("$PSRF103,00,6,00,0*23");
 
-  Serial.println(F("FullExample.ino"));
-  Serial.println(F("An extensive example of many interesting TinyGPS++ features"));
-  Serial.print(F("Testing TinyGPS++ library v. ")); Serial.println(TinyGPSPlus::libraryVersion());
-  Serial.println(F("by Mikal Hart"));
+  Serial.print(F("Tiny Circuits Arduino Speedometer")); Serial.println(TinyGPSPlus::libraryVersion());
+  Serial.println(F("by Eoin Ross"));
   Serial.println();
   Serial.println(F("Sats HDOP Latitude   Longitude   Fix  Date       Time     Date Alt    Course Speed Card  Chars Sentences Checksum   Accelerometer     LED"));
   Serial.println(F("          (deg)      (deg)       Age                      Age  (m)    --- from GPS ----  RX    RX        Fail     X   Y   Z  deg C    # "));
@@ -87,61 +89,83 @@ void loop()
   int AccelX_MAX = -500;
   int AccelX_MIN = 500;
   int AccelX_Range = 0;
+  unsigned long LastAccel = 0;
+  unsigned long LastGPS = 0;
   
   //GPS
   
   while(1)
   {
     //Accel
-      BMA250ReadAccel();
-            
-      if ( AccelX_MAX < AccelX )
+      if ((millis() - 25) > LastAccel)
       {
-        AccelX_MAX = AccelX;
+        LastAccel = millis();
+        BMA250ReadAccel();
+              
+        if ( AccelX_MAX < AccelX )
+        {
+          AccelX_MAX = AccelX;
+        }
+        if (AccelX_MIN > AccelX )
+        {
+          AccelX_MIN = AccelX;
+        }
+        AccelX_Range = AccelX_MAX - AccelX_MIN;
+        
+        LED_ind = 16 * (AccelX + (AccelX_Range/2)) / AccelX_Range;
       }
-      if (AccelX_MIN > AccelX )
+      else if (millis() < LastAccel)
       {
-        AccelX_MIN = AccelX;
+        LastAccel = millis();
       }
-      AccelX_Range = AccelX_MAX - AccelX_MIN;
       
-      LED_ind = 16 * (AccelX + (AccelX_Range/2)) / AccelX_Range;
       byCount = LED_ind;
     
     //LED
       LedOn( byCount );
-    
+      
     //GPS
-      printInt(gps.satellites.value(), gps.satellites.isValid(), 5);
-      printInt(gps.hdop.value(), gps.hdop.isValid(), 5);
-      printFloat(gps.location.lat(), gps.location.isValid(), 11, 6);
-      printFloat(gps.location.lng(), gps.location.isValid(), 12, 6);
-      printInt(gps.location.age(), gps.location.isValid(), 5);
-      printDateTime(gps.date, gps.time);
-      printFloat(gps.altitude.meters(), gps.altitude.isValid(), 7, 2);
-      printFloat(gps.course.deg(), gps.course.isValid(), 7, 2);
-      printFloat(gps.speed.kmph(), gps.speed.isValid(), 6, 2);
-      printStr(gps.course.isValid() ? TinyGPSPlus::cardinal(gps.course.value()) : "*** ", 6);
-      
-      printInt(gps.charsProcessed(), true, 6);
-      printInt(gps.sentencesWithFix(), true, 10);
-      printInt(gps.failedChecksum(), true, 9);
-      
-      // Print out the accelerometer data
-      printInt(AccelX,1,4);
-      printInt(AccelY,1,4);
-      printInt(AccelZ,1,4);
-      printFloat(AccelTemperature,1,5,2);
-      Serial.print("\t");
-      Serial.println(byCount);
-      
-      smartDelay(200);
+    smartDelay(1); // Kicks the GPS & reads info
     
-      if (millis() > 5000 && gps.charsProcessed() < 10)
+    if(gps.satellites.isUpdated() && gps.satellites.isValid())
+    {  //GPS is sending us data.
+       
+       //GPS
+        printInt(gps.satellites.value(), gps.satellites.isValid(), 5);
+        printInt(gps.hdop.value(), gps.hdop.isValid(), 5);
+        printFloat(gps.location.lat(), gps.location.isValid(), 11, 6);
+        printFloat(gps.location.lng(), gps.location.isValid(), 12, 6);
+        printInt(gps.location.age(), gps.location.isValid(), 5);
+        printDateTime(gps.date, gps.time);
+        printFloat(gps.altitude.meters(), gps.altitude.isValid(), 7, 2);
+        printFloat(gps.course.deg(), gps.course.isValid(), 7, 2);
+        printFloat(gps.speed.kmph(), gps.speed.isValid(), 6, 2);
+        printStr(gps.course.isValid() ? TinyGPSPlus::cardinal(gps.course.value()) : "*** ", 6);
+        
+        printInt(gps.charsProcessed(), true, 6);
+        printInt(gps.sentencesWithFix(), true, 10);
+        printInt(gps.failedChecksum(), true, 9);
+        
+        // Print out the accelerometer data
+        printInt(AccelX,1,4);
+        printInt(AccelY,1,4);
+        printInt(AccelZ,1,4);
+        printFloat(AccelTemperature,1,5,2);
+        Serial.print("\t");
+        // LED
+        Serial.println(byCount);
+    }
+    else if ( (LastGPS + 5000) < millis())
+    {      
+      LastGPS = millis();
+      if (gps.charsProcessed() < 10)
+      {
         Serial.println(F("No GPS data received: check wiring"));
-      //END GPS 
-    
-    delay(10);
+      }
+      //END GPS
+    }
+    if (millis() < LastGPS)
+      LastGPS = millis();
   }
 }
 
