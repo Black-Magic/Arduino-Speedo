@@ -1,1 +1,6 @@
-Test
+Project uses http://tiny-circuits.com boards to emulate a speedometer.
+
+Microprocessor - Model ASM2001 - Atmel 328 on Tinycircuits boad.
+Circle Edge LEDs - Model 2412 - display "dial"
+GPS - Model ASD2501 - GPS input
+Accelerometer - Model ASD2611 - Sanity checker on GPS (Velocity change and between updates)
